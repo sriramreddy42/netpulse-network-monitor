@@ -54,6 +54,31 @@ def create_app(test_config=None):
         result['latest_check'] = dict(check) if check else None
         return result
 
+    # Public portfolio demo: read-only synthetic inventory, no outbound sockets.
+    demo_mode = os.environ.get('DEMO_MODE', '0') == '1'
+    sample_devices = [
+        {'id': 1, 'name': 'core-router-01', 'host': '192.0.2.10', 'port': 22, 'location': 'Denver Lab', 'created_at': utcnow(), 'latest_check': {'status': 'up', 'latency_ms': 12.4, 'message': 'Simulated TCP check', 'checked_at': utcnow()}},
+        {'id': 2, 'name': 'edge-switch-02', 'host': '198.51.100.20', 'port': 443, 'location': 'Aurora Lab', 'created_at': utcnow(), 'latest_check': {'status': 'down', 'latency_ms': 1500, 'message': 'Simulated timeout', 'checked_at': utcnow()}},
+        {'id': 3, 'name': 'firewall-03', 'host': '203.0.113.30', 'port': 443, 'location': 'Test Network', 'created_at': utcnow(), 'latest_check': None},
+    ]
+
+    @app.before_request
+    def public_demo_guard():
+        if not demo_mode:
+            return None
+        path = request.path
+        if path == '/api/devices' and request.method == 'GET':
+            return jsonify(sample_devices)
+        if path == '/api/summary' and request.method == 'GET':
+            return jsonify({'total': 3, 'up': 1, 'down': 1, 'unchecked': 1})
+        if path.startswith('/api/devices/') and path.endswith('/checks') and request.method == 'GET':
+            return jsonify([])
+        if path.startswith('/api/devices/') and path.endswith('/configurations') and request.method == 'GET':
+            return jsonify([])
+        if path.startswith('/api/') and request.method != 'GET':
+            return jsonify({'error': 'Public demo is read-only; no network scans or data changes are allowed'}), 403
+        return None
+
     @app.get('/')
     def home():
         return render_template('index.html')
